@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Мессенджер</title>
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.0.0/firebase-app.js";
+        import { getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/9.0.0/firebase-auth.js";
+        import { getDatabase, ref, onChildAdded, push } from "https://www.gstatic.com/firebasejs/9.0.0/firebase-database.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyCC3RzyblsZTeFM1Qy_60FZ6ZjdasfD2yQ",
+            authDomain: "adilwhyov.firebaseapp.com",
+            databaseURL: "https://adilwhyov-default-rtdb.firebaseio.com",
+            projectId: "adilwhyov",
+            storageBucket: "adilwhyov.appspot.com",
+            messagingSenderId: "780959026674",
+            appId: "1:780959026674:web:26c947984611ecde68af6b"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth();
+        const database = getDatabase();
+
+        const userEmail = document.getElementById('user-email');
+        const messageForm = document.getElementById('message-form');
+        const loginForm = document.getElementById('login-form');
+        const registerForm = document.getElementById('register-form');
+        const logoutButton = document.getElementById('logout');
+        const groupsRef = ref(database, 'groups');
+
+        onAuthStateChanged(auth, user => {
+            if (user) {
+                userEmail.textContent = `Вход: ${user.email}`;
+                messageForm.style.display = 'block';
+                loginForm.style.display = 'none';
+                registerForm.style.display = 'none';
+                logoutButton.style.display = 'block';
+                loadGroups();
+            } else {
+                messageForm.style.display = 'none';
+                userEmail.textContent = '';
+                loginForm.style.display = 'block';
+                registerForm.style.display = 'block';
+                logoutButton.style.display = 'none';
+            }
+        });
+
+        // Аутентификация
+        registerForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const email = document.getElementById('reg-email').value;
+            const password = document.getElementById('reg-password').value;
+            createUserWithEmailAndPassword(auth, email, password);
+        });
+
+        loginForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            signInWithEmailAndPassword(auth, email, password);
+        });
+
+        logoutButton.addEventListener('click', () => {
+            signOut(auth);
+        });
+
+        // Загрузка групп
+        function loadGroups() {
+            onChildAdded(groupsRef, (data) => {
+                const group = data.val();
+                const li = document.createElement('li');
+                li.textContent = group.name;
+                li.onclick = () => loadGroupMessages(data.key);
+                document.getElementById('group-list').appendChild(li);
+            });
+        }
+
+        // Создание группы
+        document.getElementById('create-group').addEventListener('click', () => {
+            const groupName = document.getElementById('group-name').value;
+            push(groupsRef, { name: groupName });
+            document.getElementById('group-name').value = '';
+        });
+
+        // Загрузка сообщений для группы
+        function loadGroupMessages(groupId) {
+            const messagesRef = ref(database, `groups/${groupId}/messages`);
+            document.getElementById('messages').innerHTML = ''; // Очистить старые сообщения
+
+            onChildAdded(messagesRef, (data) => {
+                const message = data.val();
+                const li = document.createElement('li');
+                li.textContent = message;
+                document.getElementById('messages').appendChild(li);
+            });
+
+            // Отправка сообщения в группу
+            messageForm.onsubmit = (e) => {
+                e.preventDefault();
+                const messageInput = document.getElementById('message');
+                const message = messageInput.value;
+                const user = auth.currentUser;
+                if (user) {
+                    const timestamp = new Date().toISOString();
+                    push(messagesRef, `${user.email} (${timestamp}): ${message}`);
+                    messageInput.value = '';
+                }
+            };
+        }
+
+        // Уведомления о новых сообщениях
+        const notifyNewMessage = (message) => {
+            if (Notification.permission === "granted") {
+                new Notification("Новое сообщение", {
+                    body: message,
+                });
+            }
+        };
+
+        // Запрос разрешения на уведомления
+        if (Notification.permission !== "denied") {
+            Notification.requestPermission();
+        }
+    </script>
+</head>
+<body>
+    <h1>Мессенджер</h1>
+    <div id="user-info">
+        <p id="user-email"></p>
+        <button id="logout" style="display:none;">Выйти</button>
+    </div>
+    
+    <h2>Группы</h2>
+    <input type="text" id="group-name" placeholder="Название группы" />
+    <button id="create-group">Создать группу</button>
+    <ul id="group-list"></ul>
+
+    <h2>Сообщения</h2>
+    <ul id="messages"></ul>
+    <form id="message-form" style="display:none;">
+        <input id="message" autocomplete="off" placeholder="Введите сообщение..." required />
+        <button type="submit">Отправить</button>
+    </form>
+
+    <form id="login-form">
+        <input type="email" id="email" placeholder="Email" required />
+        <input type="password" id="password" placeholder="Пароль" required />
+        <button type="submit">Войти</button>
+    </form>
+    
+    <form id="register-form">
+        <input type="email" id="reg-email" placeholder="Email" required />
+        <input type="password" id="reg-password" placeholder="Пароль" required />
+        <button type="submit">Зарегистрироваться</button>
+    </form>
+</body>
+</html>
