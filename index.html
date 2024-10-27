@@ -5,10 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Мессенджер</title>
     <script type="module">
+        // Импорт необходимых функций из SDK Firebase
         import { initializeApp } from "https://www.gstatic.com/firebasejs/9.0.0/firebase-app.js";
-        import { getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/9.0.0/firebase-auth.js";
+        import { getAnalytics } from "https://www.gstatic.com/firebasejs/9.0.0/firebase-analytics.js";
+        import { getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, signInWithPhoneNumber, RecaptchaVerifier } from "https://www.gstatic.com/firebasejs/9.0.0/firebase-auth.js";
         import { getDatabase, ref, onChildAdded, push } from "https://www.gstatic.com/firebasejs/9.0.0/firebase-database.js";
 
+        // Ваши данные конфигурации Firebase
         const firebaseConfig = {
             apiKey: "AIzaSyCC3RzyblsZTeFM1Qy_60FZ6ZjdasfD2yQ",
             authDomain: "adilwhyov.firebaseapp.com",
@@ -16,10 +19,13 @@
             projectId: "adilwhyov",
             storageBucket: "adilwhyov.appspot.com",
             messagingSenderId: "780959026674",
-            appId: "1:780959026674:web:26c947984611ecde68af6b"
+            appId: "1:780959026674:web:26c947984611ecde68af6b",
+            measurementId: "G-HZE48K1GBC"
         };
 
+        // Инициализация Firebase
         const app = initializeApp(firebaseConfig);
+        const analytics = getAnalytics(app);
         const auth = getAuth();
         const database = getDatabase();
 
@@ -28,26 +34,34 @@
         const loginForm = document.getElementById('login-form');
         const registerForm = document.getElementById('register-form');
         const logoutButton = document.getElementById('logout');
-        const groupsRef = ref(database, 'groups');
+        const phoneForm = document.getElementById('phone-form');
+        const verificationCodeForm = document.getElementById('verification-code-form');
+        const friendsRef = ref(database, 'friends');
+        const messagesRef = ref(database, 'messages');
 
         onAuthStateChanged(auth, user => {
             if (user) {
-                userEmail.textContent = `Вход: ${user.email}`;
+                userEmail.textContent = `Вход: ${user.email || user.phoneNumber}`;
                 messageForm.style.display = 'block';
                 loginForm.style.display = 'none';
                 registerForm.style.display = 'none';
+                phoneForm.style.display = 'none';
+                verificationCodeForm.style.display = 'none';
                 logoutButton.style.display = 'block';
-                loadGroups();
+                loadMessages();
+                loadFriends();
             } else {
                 messageForm.style.display = 'none';
                 userEmail.textContent = '';
                 loginForm.style.display = 'block';
                 registerForm.style.display = 'block';
+                phoneForm.style.display = 'block';
+                verificationCodeForm.style.display = 'none';
                 logoutButton.style.display = 'none';
             }
         });
 
-        // Аутентификация
+        // Аутентификация с помощью электронной почты
         registerForm.addEventListener('submit', (e) => {
             e.preventDefault();
             const email = document.getElementById('reg-email').value;
@@ -62,68 +76,91 @@
             signInWithEmailAndPassword(auth, email, password);
         });
 
+        // Аутентификация по номеру телефона
+        phoneForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const phoneNumber = document.getElementById('phone-number').value;
+            const appVerifier = new RecaptchaVerifier('recaptcha-container', {}, auth);
+            signInWithPhoneNumber(auth, phoneNumber, appVerifier)
+                .then((confirmationResult) => {
+                    window.confirmationResult = confirmationResult;
+                    verificationCodeForm.style.display = 'block';
+                    phoneForm.style.display = 'none';
+                }).catch((error) => {
+                    console.error("Ошибка при отправке кода:", error);
+                });
+        });
+
+        verificationCodeForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const code = document.getElementById('verification-code').value;
+            confirmationResult.confirm(code).then((result) => {
+                const user = result.user;
+                console.log("Аутентификация успешна:", user);
+            }).catch((error) => {
+                console.error("Ошибка при подтверждении кода:", error);
+            });
+        });
+
         logoutButton.addEventListener('click', () => {
             signOut(auth);
         });
 
-        // Загрузка групп
-        function loadGroups() {
-            onChildAdded(groupsRef, (data) => {
-                const group = data.val();
+        // Добавление друга
+        document.getElementById('add-friend-form').addEventListener('submit', (e) => {
+            e.preventDefault();
+            const friendEmail = document.getElementById('friend-email').value;
+            push(friendsRef, { email: friendEmail });
+            document.getElementById('friend-email').value = '';
+            loadFriends();
+        });
+
+        // Загрузка друзей
+        function loadFriends() {
+            const friendList = document.getElementById('friend-list');
+            friendList.innerHTML = ''; // Очистить список друзей
+            onChildAdded(friendsRef, (data) => {
+                const friend = data.val();
                 const li = document.createElement('li');
-                li.textContent = group.name;
-                li.onclick = () => loadGroupMessages(data.key);
-                document.getElementById('group-list').appendChild(li);
+                li.textContent = friend.email;
+                friendList.appendChild(li);
             });
         }
 
-        // Создание группы
-        document.getElementById('create-group').addEventListener('click', () => {
-            const groupName = document.getElementById('group-name').value;
-            push(groupsRef, { name: groupName });
-            document.getElementById('group-name').value = '';
-        });
-
-        // Загрузка сообщений для группы
-        function loadGroupMessages(groupId) {
-            const messagesRef = ref(database, `groups/${groupId}/messages`);
-            document.getElementById('messages').innerHTML = ''; // Очистить старые сообщения
-
+        // Загрузка сообщений
+        function loadMessages() {
+            const messagesList = document.getElementById('messages');
+            messagesList.innerHTML = ''; // Очистить старые сообщения
             onChildAdded(messagesRef, (data) => {
                 const message = data.val();
                 const li = document.createElement('li');
                 li.textContent = message;
-                document.getElementById('messages').appendChild(li);
+                messagesList.appendChild(li);
             });
 
-            // Отправка сообщения в группу
+            // Отправка сообщения
             messageForm.onsubmit = (e) => {
                 e.preventDefault();
                 const messageInput = document.getElementById('message');
                 const message = messageInput.value;
                 const user = auth.currentUser;
                 if (user) {
-                    const timestamp = new Date().toISOString();
-                    push(messagesRef, `${user.email} (${timestamp}): ${message}`);
+                    push(messagesRef, `${user.email || user.phoneNumber}: ${message}`);
                     messageInput.value = '';
                 }
             };
         }
-
-        // Уведомления о новых сообщениях
-        const notifyNewMessage = (message) => {
-            if (Notification.permission === "granted") {
-                new Notification("Новое сообщение", {
-                    body: message,
-                });
-            }
-        };
-
-        // Запрос разрешения на уведомления
-        if (Notification.permission !== "denied") {
-            Notification.requestPermission();
-        }
     </script>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        #messages { list-style-type: none; max-height: 300px; overflow-y: scroll; }
+        #messages li { background: #f1f1f1; padding: 10px; border-radius: 5px; margin: 5px 0; }
+        #friend-list { list-style-type: none; }
+        #friend-list li { margin: 5px 0; }
+        @media (max-width: 600px) {
+            input, button { width: 100%; }
+        }
+    </style>
 </head>
 <body>
     <h1>Мессенджер</h1>
@@ -132,10 +169,23 @@
         <button id="logout" style="display:none;">Выйти</button>
     </div>
     
-    <h2>Группы</h2>
-    <input type="text" id="group-name" placeholder="Название группы" />
-    <button id="create-group">Создать группу</button>
-    <ul id="group-list"></ul>
+    <h2>Добавить друга</h2>
+    <form id="add-friend-form">
+        <input type="email" id="friend-email" placeholder="Email друга" required />
+        <button type="submit">Добавить</button>
+    </form>
+    <ul id="friend-list"></ul>
+
+    <h2>Аутентификация по номеру телефона</h2>
+    <form id="phone-form">
+        <input type="tel" id="phone-number" placeholder="Введите номер телефона" required />
+        <button type="submit">Получить код</button>
+    </form>
+    <div id="recaptcha-container"></div>
+    <form id="verification-code-form" style="display:none;">
+        <input type="text" id="verification-code" placeholder="Введите код подтверждения" required />
+        <button type="submit">Подтвердить</button>
+    </form>
 
     <h2>Сообщения</h2>
     <ul id="messages"></ul>
